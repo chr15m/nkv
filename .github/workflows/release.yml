@@ -1,0 +1,40 @@
+name: Create Release with Dashboard Binary
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create a release
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Specify a Node.js version
+
+      - name: Install dependencies
+        run: npm i
+
+      - name: Build binary
+        run: npx shrinkwrap dashboard.cljs dashboard
+        # This assumes 'shrinkwrap' is an npx-executable package.
+        # If it's part of nbb, the command might be different, e.g., npx nbb shrinkwrap ...
+
+      - name: Create Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dashboard # Path to the binary to upload
+          tag_name: release-${{ github.run_number }}-${{ github.sha }} # Creates a unique tag for the release
+          name: Release ${{ github.run_number }}
+          body: |
+            Automated release of the dashboard binary.
+            Commit: ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
