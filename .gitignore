@@ -1,0 +1,7 @@
+.*.swp
+.aider*
+.tmp*
+.conventions
+.dashboard-nsec
+node_modules
+dashboard
