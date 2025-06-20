@@ -3,5 +3,6 @@
 .tmp*
 .conventions
 .dashboard-nsec
+.envrc
 node_modules
 dashboard
