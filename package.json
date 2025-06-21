@@ -8,6 +8,6 @@
     "ws": "^8.18.2"
   },
   "devDependencies": {
-    "cljs-shrinkwrap": "^0.0.5"
+    "cljs-shrinkwrap": "^0.0.7"
   }
 }
