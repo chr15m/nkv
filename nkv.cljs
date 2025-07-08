@@ -61,23 +61,34 @@
       (js/console.error err))))
 
 (defn load-or-generate-nsec []
-  (if (fs/existsSync nsec-file-path)
+  (if-let [nsec-env (aget js/process.env "NKV_NSEC")]
     (try
-      (let [nsec-str (fs/readFileSync nsec-file-path "utf-8")
-            decoded (nostr/nip19.decode (str/trim nsec-str))]
+      (let [decoded (nostr/nip19.decode (str/trim nsec-env))]
         (if (= (aget decoded "type") "nsec")
           (do
-            (js/console.error "Loaded nsec from" nsec-file-path)
+            (js/console.error "Loaded nsec from NKV_NSEC environment variable")
             (aget decoded "data"))
-          (throw (js/Error. (str "Invalid nsec format in " nsec-file-path)))))
+          (throw (js/Error. "Invalid nsec format in NKV_NSEC environment variable"))))
       (catch :default e
-        (js/console.error "Error reading or decoding nsec from file:" e (.toString e))
+        (js/console.error "Error decoding nsec from NKV_NSEC environment variable:" e (.toString e))
         (js/process.exit 1)))
-    (let [sk-bytes (nostr/generateSecretKey)
-          nsec-str (nostr/nip19.nsecEncode sk-bytes)]
-      (fs/writeFileSync nsec-file-path nsec-str "utf-8")
-      (js/console.error "Generated new nsec and saved to" nsec-file-path)
-      sk-bytes)))
+    (if (fs/existsSync nsec-file-path)
+      (try
+        (let [nsec-str (fs/readFileSync nsec-file-path "utf-8")
+              decoded (nostr/nip19.decode (str/trim nsec-str))]
+          (if (= (aget decoded "type") "nsec")
+            (do
+              (js/console.error "Loaded nsec from" nsec-file-path)
+              (aget decoded "data"))
+            (throw (js/Error. (str "Invalid nsec format in " nsec-file-path)))))
+        (catch :default e
+          (js/console.error "Error reading or decoding nsec from file:" e (.toString e))
+          (js/process.exit 1)))
+      (let [sk-bytes (nostr/generateSecretKey)
+            nsec-str (nostr/nip19.nsecEncode sk-bytes)]
+        (fs/writeFileSync nsec-file-path nsec-str "utf-8")
+        (js/console.error "Generated new nsec and saved to" nsec-file-path)
+        sk-bytes))))
 
 (defn write-value [sk-bytes key-arg value-arg relays]
   (js/console.error (str "Attempting to write key: " key-arg ", value: " value-arg))
