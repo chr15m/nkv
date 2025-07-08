@@ -4,5 +4,6 @@
 .conventions
 .dashboard-nsec
 .envrc
+.nkv-nsec
 node_modules
 dashboard
