@@ -1,31 +1,35 @@
-Command line decentralized key-value store. Key-vals are encrytped and sync'ed over Nostr.
+# nkv
 
-# Install
+A simple, encrypted, decentralized key-value store for the command line, powered by Nostr.
 
-Download the `nkv` command line utility:
+## Install
 
-```
+Download the latest `nkv` binary:
+
+```bash
 wget https://github.com/chr15m/nkv/releases/latest/download/nkv
-chmod 755 nkv
-./nkv
+chmod +x ./nkv
+
+# Optional: move to your path for easy access e.g.:
+# mv ./nkv ~/bin
 ```
 
-The first time it is run it will create a new nsec key in `.nkv-nsec`.
+## Usage
 
-The key will be read from that file, or from the env var `NKV_NSEC`.
+The first time you run `nkv`, it generates a new Nostr private key and saves it to `./.nkv-nsec`. This key is used to encrypt and sync your data.
 
-Use the same key on different machines to share the same kv store.
-
-# Use
-
-Set a value for key `foo`:
-
-```
-./nkv foo 42
+**Set a value:**
+```bash
+./nkv foo "hello world"
 ```
 
-Get the value of key `foo` from Nostr:
-
-```
+**Get a value:**
+```bash
 ./nkv foo
 ```
+
+### Syncing Across Devices
+
+To use the same key-value store on another machine, copy the `./.nkv-nsec` file or set the `NKV_NSEC` environment variable with the key's content.
+
+`nkv` loads the key from the `NKV_NSEC` environment variable first, falling back to the `.nkv-nsec` file.
