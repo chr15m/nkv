@@ -23,9 +23,7 @@ jobs:
         run: npm i
 
       - name: Build binary
-        run: npx shrinkwrap nkv.cljs nkv
-        # This assumes 'shrinkwrap' is an npx-executable package.
-        # If it's part of nbb, the command might be different, e.g., npx nbb shrinkwrap ...
+        run: npm run build
 
       - name: Create Release and Upload Asset
         uses: softprops/action-gh-release@v2
