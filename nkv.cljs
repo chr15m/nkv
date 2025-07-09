@@ -6,6 +6,7 @@
     [clojure.tools.cli :as cli]
     [promesa.core :as p]
     ["nostr-tools/pool" :refer [useWebSocketImplementation SimplePool]]
+    ["crypto" :as crypto]
     ["fs" :as fs]
     ["os" :as os]
     ["path" :as path]
@@ -33,15 +34,22 @@
       (js/console.error "Failed to decrypt content:" e)
       nil)))
 
+(defn hmac-sha256 [secret data]
+  (-> (.createHmac crypto "sha256" secret)
+      (.update data)
+      (.digest "hex")))
+
 (defn create-finalized-event [sk-bytes clj-content d-identifier]
   (js/console.error "Creating event for d-identifier:" d-identifier "with content:" (pr-str clj-content))
   (let [encrypted-content (encrypt-content sk-bytes clj-content)
+        d-tag-value (hmac-sha256 sk-bytes (str app-name ":" d-identifier))
+        n-tag-value (hmac-sha256 sk-bytes app-name)
         event-template
         (clj->js
           {:kind nostr-kind
            :created_at (js/Math.floor (/ (js/Date.now) 1000))
-           :tags [["d" (str app-name ":" d-identifier)]
-                  ["n" app-name]]
+           :tags [["d" d-tag-value]
+                  ["n" n-tag-value]]
            :content encrypted-content})]
     (js/console.error "event" event-template)
     (nostr/finalizeEvent event-template sk-bytes)))
@@ -115,10 +123,13 @@
   (js/console.error "pk-key" pk-hex)
   (p/catch
     (p/let [pool (SimplePool.)
+            d-tag-value (hmac-sha256 sk-bytes (str app-name ":" key-arg))
+            n-tag-value (hmac-sha256 sk-bytes app-name)
             query-filter (clj->js {:authors [pk-hex]
                                    :limit 1
                                    :kinds [nostr-kind]
-                                   :#d [(str app-name ":" key-arg)]})
+                                   :#d [d-tag-value]
+                                   :#n [n-tag-value]})
             events (.querySync pool (clj->js relays) query-filter)]
       (when (seq events)
         (let [sorted-events (sort-by #(aget % "created_at") > events)
