@@ -11,7 +11,8 @@
     ["os" :as os]
     ["path" :as path]
     ["nostr-tools" :as nostr]
-    ["ws$default" :as ws]))
+    ["ws$default" :as ws]
+    ["child_process" :as cp]))
 
 (useWebSocketImplementation ws)
 
@@ -139,13 +140,42 @@
           (when decrypted (:value decrypted)))))
     (fn [err] (js/console.error err))))
 
+(defn shell-escape [s]
+  (str "'" (str/replace s "'" "'\\''") "'"))
+
+(defn watch-key [sk-bytes pk-hex key-arg command relays]
+  (js/console.error (str "Watching key: " key-arg ", and running command: " (str/join " " command)))
+  (let [pool (SimplePool.)
+        d-tag-value (hmac-sha256 sk-bytes (str app-name ":" key-arg))
+        n-tag-value (hmac-sha256 sk-bytes app-name)
+        event-filter (clj->js {:authors [pk-hex]
+                               :kinds [nostr-kind]
+                               :#d [d-tag-value]
+                               :#n [n-tag-value]
+                               :since (js/Math.floor (/ (js/Date.now) 1000))})]
+    (.subscribe pool (clj->js relays) event-filter
+                    (clj->js {:onevent (fn [event]
+                                         (let [decrypted (decrypt-content sk-bytes (aget event "content"))
+                                               value (:value decrypted)]
+                                           (when value
+                                             (js/console.error "New value received:" value)
+                                             (let [cmd-str (str (str/join " " command) " " (shell-escape value))]
+                                               (js/console.error "Executing:" cmd-str)
+                                               (cp/exec cmd-str (fn [err stdout stderr]
+                                                                  (when err (js/console.error "Exec error:" err))
+                                                                  (when (not-empty stdout) (js/console.log stdout))
+                                                                  (when (not-empty stderr) (js/console.error stderr))))))))}))
+    (js/console.error "Subscription started. Waiting for events...")))
+
 (def cli-options
-  [["-h" "--help" "Show this help"]])
+  [["-w" "--watch" "Watch for changes and run a command on new values."]
+   ["-h" "--help" "Show this help"]])
 
 (defn print-usage [summary]
   (println "Usage:")
   (println "  nkv <key>          Read a value for the given key.")
   (println "  nkv <key> <value>  Write a value for the given key.")
+  (println "  nkv <key> --watch <command>  Watch for changes and run command.")
   (println)
   (println "Options:")
   (println summary))
@@ -165,6 +195,15 @@
       (:help options)
       (do (print-usage summary)
           (js/process.exit 0))
+
+      (:watch options)
+      (if (< arg-count 2)
+        (do
+          (js/console.error "Error: --watch requires a key and a command.")
+          (print-usage summary)
+          (js/process.exit 1))
+        (let [[key-arg & command] arguments]
+          (watch-key sk-bytes pk-hex key-arg command relays)))
 
       (not (or (= 1 arg-count) (= 2 arg-count)))
       (do (js/console.error "Error: Invalid number of arguments. Must be 1 or 2.")
