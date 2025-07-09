@@ -13,7 +13,7 @@
 (useWebSocketImplementation ws)
 
 (def app-name "cx.mccormick.nkv")
-(def nsec-file-path ".nkv-nsec")
+(def config-file-path ".nkv")
 (def nostr-kind 30078)
 (def default-relays ["wss://relay.damus.io" "wss://relay.nostr.band"])
 
@@ -60,35 +60,41 @@
     (fn [err]
       (js/console.error err))))
 
-(defn load-or-generate-nsec []
-  (if-let [nsec-env (aget js/process.env "NKV_NSEC")]
-    (try
-      (let [decoded (nostr/nip19.decode (str/trim nsec-env))]
-        (if (= (aget decoded "type") "nsec")
-          (do
-            (js/console.error "Loaded nsec from NKV_NSEC environment variable")
-            (aget decoded "data"))
-          (throw (js/Error. "Invalid nsec format in NKV_NSEC environment variable"))))
-      (catch :default e
-        (js/console.error "Error decoding nsec from NKV_NSEC environment variable:" e (.toString e))
-        (js/process.exit 1)))
-    (if (fs/existsSync nsec-file-path)
-      (try
-        (let [nsec-str (fs/readFileSync nsec-file-path "utf-8")
-              decoded (nostr/nip19.decode (str/trim nsec-str))]
-          (if (= (aget decoded "type") "nsec")
-            (do
-              (js/console.error "Loaded nsec from" nsec-file-path)
-              (aget decoded "data"))
-            (throw (js/Error. (str "Invalid nsec format in " nsec-file-path)))))
-        (catch :default e
-          (js/console.error "Error reading or decoding nsec from file:" e (.toString e))
-          (js/process.exit 1)))
-      (let [sk-bytes (nostr/generateSecretKey)
-            nsec-str (nostr/nip19.nsecEncode sk-bytes)]
-        (fs/writeFileSync nsec-file-path nsec-str "utf-8")
-        (js/console.error "Generated new nsec and saved to" nsec-file-path)
-        sk-bytes))))
+(defn load-config []
+  (let [config-from-file (when (fs/existsSync config-file-path)
+                           (try (js->clj (js/JSON.parse (fs/readFileSync config-file-path "utf-8"))
+                                         :keywordize-keys true)
+                                (catch :default _ nil)))
+        [relays relays-source]
+        (cond
+          (not-empty (aget js/process.env "NKV_RELAYS"))
+          [(str/split (str/trim (aget js/process.env "NKV_RELAYS")) #",") "environment"]
+          (seq (:relays config-from-file))
+          [(:relays config-from-file) "config file"]
+          :else
+          [default-relays "defaults"])
+
+        decode-nsec (fn [nsec-str]
+                      (when nsec-str
+                        (try
+                          (let [decoded (nostr/nip19.decode (str/trim nsec-str))]
+                            (when (= (aget decoded "type") "nsec")
+                              (aget decoded "data")))
+                          (catch :default _ nil))))
+        [sk-bytes nsec-source]
+        (let [sk-from-env (decode-nsec (aget js/process.env "NKV_NSEC"))
+              sk-from-file (decode-nsec (:nsec config-from-file))]
+          (cond
+            sk-from-env [sk-from-env "environment"]
+            sk-from-file [sk-from-file "config file"]
+            :else
+            (let [new-sk-bytes (nostr/generateSecretKey)
+                  new-nsec-str (nostr/nip19.nsecEncode new-sk-bytes)
+                  new-config {:nsec new-nsec-str :relays relays}]
+              (fs/writeFileSync config-file-path (js/JSON.stringify (clj->js new-config) nil 2) "utf-8")
+              [new-sk-bytes "generated"])))]
+    (js/console.error (str "Using nsec from " nsec-source " and relays from " relays-source "."))
+    {:sk-bytes sk-bytes :relays relays}))
 
 (defn write-value [sk-bytes key-arg value-arg relays]
   (js/console.error (str "Attempting to write key: " key-arg ", value: " value-arg))
@@ -126,7 +132,7 @@
   (println summary))
 
 (defn main [& args]
-  (let [sk-bytes (load-or-generate-nsec) ; This is synchronous
+  (let [{:keys [sk-bytes relays]} (load-config) ; This is synchronous
         pk-hex (pubkey sk-bytes)
         {:keys [options arguments errors summary]} (cli/parse-opts args cli-options)
         arg-count (count arguments)]
@@ -151,11 +157,11 @@
         (if (= 2 arg-count)
           ; Write operation
           (p/do!
-            (write-value sk-bytes key-arg value-arg default-relays)
+            (write-value sk-bytes key-arg value-arg relays)
             (js/console.error (str "Value set for key '" key-arg "'."))
             (js/process.exit 0))
           ; Read operation
-          (p/let [retrieved-value (read-value sk-bytes pk-hex key-arg default-relays)]
+          (p/let [retrieved-value (read-value sk-bytes pk-hex key-arg relays)]
             (if retrieved-value
               (do
                 (println retrieved-value)
