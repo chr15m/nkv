@@ -16,7 +16,7 @@ chmod +x ./nkv
 
 ## Usage
 
-The first time you run `nkv`, it generates a new Nostr private key and a configuration file at `./.nkv`. This file stores your private key and the list of Nostr relays used to sync your data.
+The first time you run `nkv`, it generates a new Nostr private key and a configuration file at `./.nkv`. This file stores the private key and the list of Nostr relays used to sync the data. Using the same config on different machines gives access to the same kv store.
 
 **Set a value:**
 ```bash
@@ -33,7 +33,7 @@ The first time you run `nkv`, it generates a new Nostr private key and a configu
 To use the same key-value store on another machine, you can copy the `./.nkv` configuration file.
 
 Alternatively, you can configure `nkv` using environment variables:
-- `NKV_NSEC`: Set this to your Nostr private key (`nsec...`).
+- `NKV_NSEC`: Set this to the shared Nostr private key (`nsec...`).
 - `NKV_RELAYS`: A comma-separated list of relay URLs to use (e.g., `wss://relay.one,wss://relay.two`).
 
 `nkv` loads its configuration with the following priority (highest first):
