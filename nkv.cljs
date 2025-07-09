@@ -7,6 +7,8 @@
     [promesa.core :as p]
     ["nostr-tools/pool" :refer [useWebSocketImplementation SimplePool]]
     ["fs" :as fs]
+    ["os" :as os]
+    ["path" :as path]
     ["nostr-tools" :as nostr]
     ["ws$default" :as ws]))
 
@@ -60,11 +62,16 @@
     (fn [err]
       (js/console.error err))))
 
+(defn read-config [p]
+  (when (fs/existsSync p)
+    (try (js->clj (js/JSON.parse (fs/readFileSync p "utf-8"))
+                  :keywordize-keys true)
+         (catch :default _ nil))))
+
 (defn load-config []
-  (let [config-from-file (when (fs/existsSync config-file-path)
-                           (try (js->clj (js/JSON.parse (fs/readFileSync config-file-path "utf-8"))
-                                         :keywordize-keys true)
-                                (catch :default _ nil)))
+  (let [home-config-path (path/join (os/homedir) ".nkv")
+        config-from-file (or (read-config config-file-path)
+                             (read-config home-config-path))
         [relays relays-source]
         (cond
           (not-empty (aget js/process.env "NKV_RELAYS"))
@@ -92,6 +99,7 @@
                   new-nsec-str (nostr/nip19.nsecEncode new-sk-bytes)
                   new-config {:nsec new-nsec-str :relays relays}]
               (fs/writeFileSync config-file-path (js/JSON.stringify (clj->js new-config) nil 2) "utf-8")
+              (js/console.error "Wrote config to" config-file-path)
               [new-sk-bytes "generated"])))]
     (js/console.error (str "Using nsec from " nsec-source " and relays from " relays-source "."))
     {:sk-bytes sk-bytes :relays relays}))

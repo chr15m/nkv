@@ -30,7 +30,7 @@ The first time you run `nkv`, it generates a new Nostr private key and a configu
 
 ### Syncing Across Devices
 
-To use the same key-value store on another machine, you can copy the `./.nkv` configuration file.
+To use the same key-value store on another machine, you can copy the configuration file to `./.nkv` or `~/.nkv`.
 
 Alternatively, you can configure `nkv` using environment variables:
 - `NKV_NSEC`: Set this to the shared Nostr private key (`nsec...`).
@@ -38,5 +38,5 @@ Alternatively, you can configure `nkv` using environment variables:
 
 `nkv` loads its configuration with the following priority (highest first):
 1. Environment variables (`NKV_NSEC`, `NKV_RELAYS`)
-2. Configuration file (`./.nkv`)
+2. Configuration file (`./.nkv` is checked first, then `~/.nkv`)
 3. Default values (a new key is generated and default relays are used)
