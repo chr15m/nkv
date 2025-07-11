@@ -29,10 +29,13 @@ echo "PASS: --init failed as expected."
 rm ./.nkv
 
 echo "--- Test: Set and get a value ---"
-${binary} --init > /dev/null 2>&1
-${binary} mykey "myvalue" > /dev/null 2>&1
+${binary} --init > /dev/null 2>init.log
+cat init.log
+${binary} mykey "myvalue" > /dev/null 2>set.log
+cat set.log
 sleep 5 # allow time for propagation
-output=$(${binary} mykey 2> /dev/null)
+output=$(${binary} mykey 2>get.log)
+cat get.log
 if [[ "$output" != "myvalue" ]]; then
   echo "FAIL: Expected 'myvalue', got '$output'."
   exit 1
@@ -43,9 +46,11 @@ rm ./.nkv
 echo "--- Test: Environment variables ---"
 export NKV_NSEC="nsec10wuq8c3n7p3mwa5588mnc6w8p6pl2vkhuse0k2gkwfg43l85f5s2qzv3fr"
 export NKV_RELAYS="wss://relay.damus.io"
-${binary} envkey "envvalue" > /dev/null 2>&1
+${binary} envkey "envvalue" > /dev/null 2>env-set.log
+cat env-set.log
 sleep 5 # allow time for propagation
-output=$(${binary} envkey 2> /dev/null)
+output=$(${binary} envkey 2>env-get.log)
+cat env-get.log
 if [[ "$output" != "envvalue" ]]; then
   echo "FAIL: Expected 'envvalue', got '$output'."
   exit 1
