@@ -1,6 +1,6 @@
 # nkv
 
-A simple, encrypted, decentralized key-value store for the command line, powered by Nostr.
+A simple, encrypted, decentralized key-value store for the command line, powered by [Nostr](https://en.wikipedia.org/wiki/Nostr).
 
 ## Install
 
@@ -34,6 +34,8 @@ The first time you run `nkv`, it generates a new Nostr private key and a configu
 ```
 This will run the command `echo` with the new value as an argument whenever `foo` is updated.
 
+**Note:** output is sent to stderr, except for received values, so you can safely pipe `get` into files or shell commands.
+
 ### Syncing Across Devices
 
 To use the same key-value store on another machine, you can copy the configuration file to `./.nkv` or `~/.nkv`.
@@ -46,3 +48,12 @@ Alternatively, you can configure `nkv` using environment variables:
 1. Environment variables (`NKV_NSEC`, `NKV_RELAYS`)
 2. Configuration file (`./.nkv` is checked first, then `~/.nkv`)
 3. Default values (a new key is generated and default relays are used)
+
+## Tradeoffs
+
+`nkv` is built on the Nostr protocol and inherits its characteristics. It is best suited for eventually-consistent storage of small amounts of data.
+
+- **Update Speed**: Updates are limited to one per second and can take several seconds to propagate.
+- **Data Size**: The total size of all values should be kept small (under 50kb) to avoid relay timeouts and throttling.
+- **Rate Limiting**: Relays may independently rate-limit frequent updates.
+- **Relay Dependency**: This depends on 3rd party relays, but values are encrypted, and you can run your own.
