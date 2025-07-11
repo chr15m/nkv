@@ -44,7 +44,7 @@ echo "PASS: Set and get successful."
 rm ./.nkv
 
 echo "--- Test: Environment variables ---"
-export NKV_NSEC="nsec10wuq8c3n7p3mwa5588mnc6w8p6pl2vkhuse0k2gkwfg43l85f5s2qzv3fr"
+export NKV_NSEC="nsec1q795m85vzgpjnn7rhh2glfkzlxml2c99h5v3q3s7w76kjvnfzmhslvfkka"
 export NKV_RELAYS="wss://relay.damus.io"
 ${binary} envkey "envvalue" > /dev/null 2>env-set.log
 cat env-set.log
