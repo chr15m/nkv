@@ -42,7 +42,7 @@ This will run the command `echo` with the new value as an argument whenever `foo
 
 **Generate a new private key and config file:**
 ```bash
-nkv foo --init
+nkv --init
 ```
 This will create a `.nkv` config file with a new private key.
 
