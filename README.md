@@ -18,6 +18,8 @@ chmod +x ./nkv
 # mv ./nkv ~/bin
 ```
 
+Or you can use `npm install noskv` and then `npx nkv` in a Node project.
+
 ## Usage
 
 The first time you run `nkv`, it generates a new Nostr private key and a configuration file at `./.nkv`. This file stores the private key and the list of Nostr relays used to sync the data. Using the same config on different machines gives access to the same kv store.
