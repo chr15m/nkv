@@ -237,7 +237,7 @@
                                     "node_modules/nbb/cli.js")
                                   (.endsWith
                                     (or (aget argv 1) "")
-                                    "/bin/nbb"))
+                                    "bin/nbb"))
                                 3 2)))))
 
 (defonce started
