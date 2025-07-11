@@ -28,6 +28,12 @@ The first time you run `nkv`, it generates a new Nostr private key and a configu
 ./nkv foo
 ```
 
+**Watch a key for changes:**
+```bash
+./nkv foo --watch echo
+```
+This will run the command `echo` with the new value as an argument whenever `foo` is updated.
+
 ### Syncing Across Devices
 
 To use the same key-value store on another machine, you can copy the configuration file to `./.nkv` or `~/.nkv`.
