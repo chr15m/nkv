@@ -93,21 +93,26 @@
                       (js/JSON.stringify
                         (clj->js new-config) nil 2) "utf-8")
     (js/console.error "Wrote config to" config-file-path)
-    [new-sk-bytes "generated"]))
+    [new-sk-bytes "generated config"]))
 
 (defn get-relays [config-from-file]
   (cond
     (not-empty (aget js/process.env "NKV_RELAYS"))
     [(str/split (str/trim (aget js/process.env "NKV_RELAYS")) #",") "environment"]
     (seq (:relays config-from-file))
-    [(:relays config-from-file) "config file"]
+    [(:relays config-from-file) (str "config file")]
     :else
     [default-relays "defaults"]))
 
 (defn load-config []
   (let [home-config-path (path/join (os/homedir) ".nkv")
-        config-from-file (or (read-config config-file-path)
-                             (read-config home-config-path))
+        [config-from-file loaded-path]
+        (cond (fs/existsSync config-file-path)
+              [(read-config config-file-path) config-file-path]
+              (fs/existsSync home-config-path)
+              [(read-config home-config-path) home-config-path]
+              :else
+              [nil nil])
         [relays relays-source]
         (get-relays config-from-file)
         [sk-bytes nsec-source]
@@ -115,10 +120,12 @@
               sk-from-file (decode-nsec (:nsec config-from-file))]
           (cond
             sk-from-env [sk-from-env "environment"]
-            sk-from-file [sk-from-file "config file"]
+            sk-from-file [sk-from-file (str "config file")]
             :else
             (generate-new-nkv-config relays)))]
-    (js/console.error (str "Using nsec from " nsec-source " and relays from " relays-source "."))
+    (js/console.error "Using nsec from" nsec-source "and relays from" relays-source)
+    (when loaded-path
+      (js/console.error "Loaded config from" loaded-path))
     {:sk-bytes sk-bytes :relays relays}))
 
 (defn write-value [sk-bytes key-arg value-arg relays]
@@ -196,7 +203,7 @@
       (js/console.error "Config already present in" config-file-path)
       (js/process.exit 1))
     (do
-      (generate-new-nkv-config (get-relays nil))
+      (generate-new-nkv-config (first (get-relays nil)))
       (js/process.exit 0))))
 
 (defn main [& args]
