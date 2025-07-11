@@ -69,4 +69,17 @@ if [[ -f ./.nkv ]]; then
 fi
 echo -e "${PASS} Environment variables successful."
 
+echo "--- Test: --help flag ---"
+output=$(${binary} --help 2>&1)
+exit_code=$?
+if [[ $exit_code -ne 0 ]]; then
+  echo -e "${FAIL} --help exited with code $exit_code, expected 0."
+  exit 1
+fi
+if ! echo "$output" | grep -q "Usage:"; then
+  echo -e "${FAIL} --help output did not contain 'Usage:'."
+  exit 1
+fi
+echo -e "${PASS} --help flag works as expected."
+
 echo -e "${GREEN}All tests passed!${NC}"
