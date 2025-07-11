@@ -35,6 +35,14 @@
       (js/console.error "Failed to decrypt content:" e)
       nil)))
 
+(defn decode-nsec [nsec-str]
+  (when nsec-str
+    (try
+      (let [decoded (nostr/nip19.decode (str/trim nsec-str))]
+        (when (= (aget decoded "type") "nsec")
+          (aget decoded "data")))
+      (catch :default _ nil))))
+
 (defn hmac-sha256 [secret data]
   (-> (.createHmac crypto "sha256" secret)
       (.update data)
@@ -102,13 +110,6 @@
                              (read-config home-config-path))
         [relays relays-source]
         (get-relays config-from-file)
-        decode-nsec (fn [nsec-str]
-                      (when nsec-str
-                        (try
-                          (let [decoded (nostr/nip19.decode (str/trim nsec-str))]
-                            (when (= (aget decoded "type") "nsec")
-                              (aget decoded "data")))
-                          (catch :default _ nil))))
         [sk-bytes nsec-source]
         (let [sk-from-env (decode-nsec (aget js/process.env "NKV_NSEC"))
               sk-from-file (decode-nsec (:nsec config-from-file))]
@@ -189,6 +190,15 @@
   (println "Options:")
   (println summary))
 
+(defn handle-init []
+  (if (fs/existsSync config-file-path)
+    (do
+      (js/console.error "Config already present in" config-file-path)
+      (js/process.exit 1))
+    (do
+      (generate-new-nkv-config (get-relays nil))
+      (js/process.exit 0))))
+
 (defn main [& args]
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)
         arg-count (count arguments)]
@@ -204,14 +214,7 @@
           (js/process.exit 0))
 
       (:init options)
-
-      (if (fs/existsSync config-file-path)
-        (do
-          (js/console.error "Config already present in" config-file-path)
-          (js/process.exit 1))
-        (do
-          (generate-new-nkv-config (get-relays nil))
-          (js/process.exit 0)))
+      (handle-init)
 
       :else
       (let [{:keys [sk-bytes relays]} (load-config)
