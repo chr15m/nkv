@@ -1,4 +1,6 @@
 {
+  "name": "noskv",
+  "version": "0.0.1",
   "bin": {
     "dashboard": "./nkv.cljs"
   },
