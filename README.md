@@ -22,23 +22,29 @@ Or you can use `npm install noskv` and then `npx nkv` in a Node project.
 
 ## Usage
 
-The first time you run `nkv`, it generates a new Nostr private key and a configuration file at `./.nkv`. This file stores the private key and the list of Nostr relays used to sync the data. Using the same config on different machines gives access to the same kv store.
+The first time you run `nkv`, it generates a new Nostr private key and a configuration file at `./.nkv`. This file stores the private key and the list of Nostr relays used to sync the data. Using the same config on different machines gives access to the same kv store. You can also generate private key config file with `nkv --init`.
 
 **Set a value:**
 ```bash
-./nkv foo "hello world"
+nkv foo "hello world"
 ```
 
 **Get a value:**
 ```bash
-./nkv foo
+nkv foo
 ```
 
 **Watch a key for changes:**
 ```bash
-./nkv foo --watch echo
+nkv foo --watch echo
 ```
 This will run the command `echo` with the new value as an argument whenever `foo` is updated.
+
+**Generate a new private key and config file:**
+```bash
+nkv foo --init
+```
+This will create a `.nkv` config file with a new private key.
 
 **Note:** output is sent to stderr, except for received values, so you can safely pipe `get` into files or shell commands.
 
