@@ -41,7 +41,9 @@
       (let [decoded (nostr/nip19.decode (str/trim nsec-str))]
         (when (= (aget decoded "type") "nsec")
           (aget decoded "data")))
-      (catch :default _ nil))))
+      (catch :default e
+        (js/console.error (str "Error decoding nsec: " e))
+        nil))))
 
 (defn hmac-sha256 [secret data]
   (-> (.createHmac crypto "sha256" secret)
