@@ -95,4 +95,43 @@ if ! echo "$output" | grep -q "No value found for key"; then
 fi
 echo -e "${PASS} Reading non-existent key failed as expected."
 
+echo "--- Test: --watch functionality ---"
+WATCH_FILE="watch_output.log"
+# Clear watch file if it exists
+> "$WATCH_FILE"
+
+# Set an initial value
+${binary} watchkey "initial" >/dev/null 2>watch-set1.log
+cat watch-set1.log
+sleep 5
+
+# Start watching in the background
+${binary} watchkey --watch echo > "$WATCH_FILE" 2>watch-stderr.log &
+WATCH_PID=$!
+# Give the subscription a moment to start
+sleep 5
+
+# Update the value, which should trigger the watch command
+${binary} watchkey "updated" >/dev/null 2>watch-set2.log
+cat watch-set2.log
+sleep 5 # Allow time for propagation and command execution
+
+# Kill the watcher
+kill $WATCH_PID
+# Wait a moment to ensure it's killed
+sleep 1
+
+# Check the output
+watch_output=$(cat "$WATCH_FILE")
+if [[ "$watch_output" != "updated" ]]; then
+  echo -e "${FAIL} --watch did not produce the correct output. Expected 'updated', got '$watch_output'."
+  echo "--- stderr from watch process ---"
+  cat watch-stderr.log
+  echo "---------------------------------"
+  rm "$WATCH_FILE" watch-set1.log watch-set2.log watch-stderr.log
+  exit 1
+fi
+echo -e "${PASS} --watch functionality works as expected."
+rm "$WATCH_FILE" watch-set1.log watch-set2.log watch-stderr.log
+
 echo -e "${GREEN}All tests passed!${NC}"
