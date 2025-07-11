@@ -77,19 +77,31 @@
                   :keywordize-keys true)
          (catch :default _ nil))))
 
+(defn generate-new-nkv-config [relays]
+  (let [new-sk-bytes (nostr/generateSecretKey)
+        new-nsec-str (nostr/nip19.nsecEncode new-sk-bytes)
+        new-config {:nsec new-nsec-str :relays relays}]
+    (fs/writeFileSync config-file-path
+                      (js/JSON.stringify
+                        (clj->js new-config) nil 2) "utf-8")
+    (js/console.error "Wrote config to" config-file-path)
+    [new-sk-bytes "generated"]))
+
+(defn get-relays [config-from-file]
+  (cond
+    (not-empty (aget js/process.env "NKV_RELAYS"))
+    [(str/split (str/trim (aget js/process.env "NKV_RELAYS")) #",") "environment"]
+    (seq (:relays config-from-file))
+    [(:relays config-from-file) "config file"]
+    :else
+    [default-relays "defaults"]))
+
 (defn load-config []
   (let [home-config-path (path/join (os/homedir) ".nkv")
         config-from-file (or (read-config config-file-path)
                              (read-config home-config-path))
         [relays relays-source]
-        (cond
-          (not-empty (aget js/process.env "NKV_RELAYS"))
-          [(str/split (str/trim (aget js/process.env "NKV_RELAYS")) #",") "environment"]
-          (seq (:relays config-from-file))
-          [(:relays config-from-file) "config file"]
-          :else
-          [default-relays "defaults"])
-
+        (get-relays config-from-file)
         decode-nsec (fn [nsec-str]
                       (when nsec-str
                         (try
@@ -104,12 +116,7 @@
             sk-from-env [sk-from-env "environment"]
             sk-from-file [sk-from-file "config file"]
             :else
-            (let [new-sk-bytes (nostr/generateSecretKey)
-                  new-nsec-str (nostr/nip19.nsecEncode new-sk-bytes)
-                  new-config {:nsec new-nsec-str :relays relays}]
-              (fs/writeFileSync config-file-path (js/JSON.stringify (clj->js new-config) nil 2) "utf-8")
-              (js/console.error "Wrote config to" config-file-path)
-              [new-sk-bytes "generated"])))]
+            (generate-new-nkv-config relays)))]
     (js/console.error (str "Using nsec from " nsec-source " and relays from " relays-source "."))
     {:sk-bytes sk-bytes :relays relays}))
 
@@ -169,10 +176,12 @@
 
 (def cli-options
   [["-w" "--watch" "Watch for changes and run a command on new values."]
+   ["-i" "--init" "Create a new .nkv file with a new private key."]
    ["-h" "--help" "Show this help"]])
 
 (defn print-usage [summary]
   (println "Usage:")
+  (println "  nkv --init         Create a new .nkv config file with a new private key.")
   (println "  nkv <key>          Read a value for the given key.")
   (println "  nkv <key> <value>  Write a value for the given key.")
   (println "  nkv <key> --watch <command>  Watch for changes and run command.")
@@ -181,9 +190,7 @@
   (println summary))
 
 (defn main [& args]
-  (let [{:keys [sk-bytes relays]} (load-config) ; This is synchronous
-        pk-hex (pubkey sk-bytes)
-        {:keys [options arguments errors summary]} (cli/parse-opts args cli-options)
+  (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)
         arg-count (count arguments)]
     #_ (js/console.error "Arguments parsed:" (pr-str arguments))
     (cond
@@ -196,37 +203,51 @@
       (do (print-usage summary)
           (js/process.exit 0))
 
-      (:watch options)
-      (if (< arg-count 2)
-        (do
-          (js/console.error "Error: --watch requires a key and a command.")
-          (print-usage summary)
-          (js/process.exit 1))
-        (let [[key-arg & command] arguments]
-          (watch-key sk-bytes pk-hex key-arg command relays)))
+      (:init options)
 
-      (not (or (= 1 arg-count) (= 2 arg-count)))
-      (do (js/console.error "Error: Invalid number of arguments. Must be 1 or 2.")
-          (print-usage summary)
+      (if (fs/existsSync config-file-path)
+        (do
+          (js/console.error "Config already present in" config-file-path)
           (js/process.exit 1))
+        (do
+          (generate-new-nkv-config (get-relays nil))
+          (js/process.exit 0)))
 
       :else
-      (let [[key-arg value-arg] arguments]
-        (if (= 2 arg-count)
-          ; Write operation
-          (p/do!
-            (write-value sk-bytes key-arg value-arg relays)
-            (js/console.error (str "Value set for key '" key-arg "'."))
-            (js/process.exit 0))
-          ; Read operation
-          (p/let [retrieved-value (read-value sk-bytes pk-hex key-arg relays)]
-            (if retrieved-value
-              (do
-                (println retrieved-value)
+      (let [{:keys [sk-bytes relays]} (load-config)
+            pk-hex (pubkey sk-bytes)]
+        (cond
+          (:watch options)
+          (if (< arg-count 2)
+            (do
+              (js/console.error "Error: --watch requires a key and a command.")
+              (print-usage summary)
+              (js/process.exit 1))
+            (let [[key-arg & command] arguments]
+              (watch-key sk-bytes pk-hex key-arg command relays)))
+
+          (not (or (= 1 arg-count) (= 2 arg-count)))
+          (do (js/console.error "Error: Invalid number of arguments. Must be 1 or 2.")
+              (print-usage summary)
+              (js/process.exit 1))
+
+          :else
+          (let [[key-arg value-arg] arguments]
+            (if (= 2 arg-count)
+              ; Write operation
+              (p/do!
+                (write-value sk-bytes key-arg value-arg relays)
+                (js/console.error (str "Value set for key '" key-arg "'."))
                 (js/process.exit 0))
-              (do
-                (js/console.error (str "No value found for key '" key-arg "'."))
-                (js/process.exit 1)))))))))
+              ; Read operation
+              (p/let [retrieved-value (read-value sk-bytes pk-hex key-arg relays)]
+                (if retrieved-value
+                  (do
+                    (println retrieved-value)
+                    (js/process.exit 0))
+                  (do
+                    (js/console.error (str "No value found for key '" key-arg "'."))
+                    (js/process.exit 1)))))))))))
 
 (defn get-args [argv]
   (not-empty (js->clj (.slice argv
