@@ -2,6 +2,8 @@
 
 A simple, encrypted, decentralized key-value store for the command line, powered by [Nostr](https://en.wikipedia.org/wiki/Nostr).
 
+[Install](#install) | [Use](#usage) | [Syncing](#syncing-across-devices) | [Tradeoffs](#tradeoffs)
+
 [![nkv demo video](https://i3.ytimg.com/vi/DSCQcAT5AEw/sddefault.jpg)](https://www.youtube.com/watch?v=DSCQcAT5AEw)
 
 ## Install
