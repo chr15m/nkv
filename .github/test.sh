@@ -82,4 +82,17 @@ if ! echo "$output" | grep -q "Usage:"; then
 fi
 echo -e "${PASS} --help flag works as expected."
 
+echo "--- Test: Read non-existent key ---"
+output=$(${binary} non_existent_key 2>&1)
+exit_code=$?
+if [[ $exit_code -ne 1 ]]; then
+  echo -e "${FAIL} Reading non-existent key exited with code $exit_code, expected 1."
+  exit 1
+fi
+if ! echo "$output" | grep -q "No value found for key"; then
+  echo -e "${FAIL} Did not get expected output for non-existent key."
+  exit 1
+fi
+echo -e "${PASS} Reading non-existent key failed as expected."
+
 echo -e "${GREEN}All tests passed!${NC}"
