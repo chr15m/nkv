@@ -16,7 +16,5 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         run: npm install
-      - name: Make script executable
-        run: chmod +x ./nkv.cljs
       - name: Run tests
-        run: cd .github && ./test.sh
+        run: npm run test
