@@ -160,6 +160,23 @@
 (defn shell-escape [s]
   (str "'" (str/replace s "'" "'\\''") "'"))
 
+(defn received-event [sk-bytes command event]
+  (let [decrypted (decrypt-content sk-bytes (aget event "content"))
+        value (:value decrypted)]
+    (when value
+      (js/console.error "New value received:" value)
+      (let [cmd-str (str (str/join " " command) " " (shell-escape value))]
+        (js/console.error "Executing:" cmd-str)
+        (cp/exec cmd-str (fn [err stdout stderr]
+                           (when err (js/console.error "Exec error:" err))
+                           (when (not-empty stdout) (js/console.log stdout))
+                           (when (not-empty stderr) (js/console.error stderr))))))))
+
+(defn subscribe-to-events [pool relays event-filter sk-bytes command]
+  (.subscribe pool (clj->js relays) event-filter
+              (clj->js {:onevent
+                        #(received-event sk-bytes command %)})))
+
 (defn watch-key [sk-bytes pk-hex key-arg command relays]
   (js/console.error (str "Watching key: " key-arg ", and running command: " (str/join " " command)))
   (let [pool (SimplePool.)
@@ -170,18 +187,7 @@
                                :#d [d-tag-value]
                                :#n [n-tag-value]
                                :since (js/Math.floor (/ (js/Date.now) 1000))})]
-    (.subscribe pool (clj->js relays) event-filter
-                    (clj->js {:onevent (fn [event]
-                                         (let [decrypted (decrypt-content sk-bytes (aget event "content"))
-                                               value (:value decrypted)]
-                                           (when value
-                                             (js/console.error "New value received:" value)
-                                             (let [cmd-str (str (str/join " " command) " " (shell-escape value))]
-                                               (js/console.error "Executing:" cmd-str)
-                                               (cp/exec cmd-str (fn [err stdout stderr]
-                                                                  (when err (js/console.error "Exec error:" err))
-                                                                  (when (not-empty stdout) (js/console.log stdout))
-                                                                  (when (not-empty stderr) (js/console.error stderr))))))))}))
+    (subscribe-to-events pool relays event-filter sk-bytes command)
     (js/console.error "Subscription started. Waiting for events...")))
 
 (def cli-options
