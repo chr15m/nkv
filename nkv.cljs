@@ -20,6 +20,7 @@
 (def config-file-path ".nkv")
 (def nostr-kind 30078)
 (def default-relays ["wss://relay.damus.io" "wss://relay.nostr.band"])
+(def resubscribe-backoff [1 2 3 10 10 10 20 20 30 60])
 
 ; *** nostr stuff *** ;
 
@@ -82,6 +83,38 @@
           (js/process.exit 1))))
     (fn [err]
       (js/console.error err))))
+
+(defn auto-reconnect-looper [*state re-subscribe-callback]
+  (when-let [pool (:pool *state)]
+    (let [statuses (.listConnectionStatus pool)
+          connected-count (->> statuses
+                               js/Object.fromEntries
+                               (js->clj)
+                               (vals)
+                               (filter true?)
+                               count)
+          *updated-state
+          (if
+            (> connected-count 0)
+            (assoc *state :reconnect nil)
+            (if-let [[backoff-idx last-attempt-ms] (:reconnect *state)]
+              (let [delay-s (nth resubscribe-backoff backoff-idx)]
+                (if (> (js/Date.now) (+ last-attempt-ms (* delay-s 1000)))
+                  (do
+                    (js/console.log "Attempting to reconnect to relays...")
+                    (let [next-idx (min (inc backoff-idx) (dec (count resubscribe-backoff)))]
+                      (-> *state
+                          (re-subscribe-callback)
+                          (assoc :reconnect [next-idx (js/Date.now)]))))
+                  *state))
+              (do
+                (js/console.log "Connection to relays lost. Scheduling reconnect.")
+                (assoc *state :reconnect [0 (js/Date.now)]))))]
+      (js/setTimeout
+        #(auto-reconnect-looper *updated-state re-subscribe-callback)
+        (*
+         (or (-> *updated-state :reconnect first) 1)
+         1000)))))
 
 ; *** file stuff *** ;
 
