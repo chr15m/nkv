@@ -98,7 +98,7 @@ printf "%b\n" "${PASS} Reading non-existent key failed as expected.${NC}"
 echo "--- Test: --watch functionality ---"
 WATCH_FILE="watch_output.log"
 # Clear watch file if it exists
-> "$WATCH_FILE"
+true > "$WATCH_FILE"
 
 # Set an initial value
 ${binary} watchkey "initial" >/dev/null 2>watch-set1.log
