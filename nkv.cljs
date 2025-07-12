@@ -20,7 +20,8 @@
 (def config-file-path ".nkv")
 (def nostr-kind 30078)
 (def default-relays ["wss://relay.damus.io" "wss://relay.nostr.band"])
-(def resubscribe-backoff [1 2 3 10 10 10 20 20 30 60])
+(def resubscribe-backoff [10 10 10 20 20 30 60])
+(def websocket-ping-ms 10000)
 
 ; *** nostr stuff *** ;
 
@@ -85,35 +86,42 @@
       (js/console.error err))))
 
 (defn auto-reconnect-looper [*state re-subscribe-callback]
-  (when-let [pool (:pool *state)]
-    (let [statuses (.listConnectionStatus pool)
-          connected-count (->> statuses
-                               js/Object.fromEntries
-                               (js->clj)
-                               (vals)
-                               (filter true?)
-                               count)
-          *updated-state
+  (let [pool (:pool *state)
+        statuses (.listConnectionStatus pool)
+        connected-count (->> statuses
+                             js/Object.fromEntries
+                             (js->clj)
+                             (vals)
+                             (filter true?)
+                             count)]
+    (js/console.log "auto-reconnect-looper" connected-count)
+    (when
+      (and
+        (> connected-count 0)
+        (not (> (:connected-count *state) 0)))
+      (js/console.error "Connected."))
+    (let [*updated-state
           (if
             (> connected-count 0)
-            (assoc *state :reconnect nil)
+            (assoc *state :reconnect nil
+                   :connected-count connected-count)
             (if-let [[backoff-idx last-attempt-ms] (:reconnect *state)]
               (let [delay-s (nth resubscribe-backoff backoff-idx)]
                 (if (> (js/Date.now) (+ last-attempt-ms (* delay-s 1000)))
                   (do
-                    (js/console.log "Attempting to reconnect to relays...")
+                    (js/console.error "Attempting to reconnect to relays...")
                     (let [next-idx (min (inc backoff-idx) (dec (count resubscribe-backoff)))]
                       (-> *state
                           (re-subscribe-callback)
                           (assoc :reconnect [next-idx (js/Date.now)]))))
                   *state))
               (do
-                (js/console.log "Connection to relays lost. Scheduling reconnect.")
+                (js/console.error "Connection to relays lost.")
                 (assoc *state :reconnect [0 (js/Date.now)]))))]
       (js/setTimeout
         #(auto-reconnect-looper *updated-state re-subscribe-callback)
         (*
-         (or (-> *updated-state :reconnect first) 1)
+         (js/Math.max (-> *updated-state :reconnect first) 1)
          1000)))))
 
 ; *** file stuff *** ;
@@ -210,9 +218,26 @@
                            (when (not-empty stderr) (js/console.error stderr))))))))
 
 (defn subscribe-to-events [pool relays event-filter sk-bytes command]
-  (.subscribe pool (clj->js relays) event-filter
-              (clj->js {:onevent
-                        #(received-event sk-bytes command %)})))
+  (let [sub (.subscribe pool (clj->js relays) event-filter
+                        (clj->js {:onevent
+                                  #(received-event sk-bytes command %)
+                                  :onclose
+                                  #(js/console.error "CLOSE" %)}))]
+    (doseq [[url relay] (.entries (aget pool "relays"))]
+      (when-let [ws (aget relay "ws")]
+        (when (aget ws "ping")
+          (js/console.error "Setting up ping loop for relay" url)
+          (.on ws "pong" #(js/console.error "Received pong from" url %))
+          ((fn ping-looper []
+             (js/setTimeout
+               (fn []
+                 (js/console.log "readyState" url (aget ws "readyState"))
+                 (when (= (aget ws "readyState") 1) ; WebSocket.OPEN
+                   (js/console.log "Pinging" url)
+                   (.ping ws)
+                   (ping-looper)))
+               websocket-ping-ms))))))
+    sub))
 
 (defn watch-key [sk-bytes pk-hex key-arg command relays]
   (js/console.error (str "Watching key: " key-arg ", and running command: " (str/join " " command)))
@@ -223,8 +248,14 @@
                                :kinds [nostr-kind]
                                :#d [d-tag-value]
                                :#n [n-tag-value]
-                               :since (js/Math.floor (/ (js/Date.now) 1000))})]
-    (subscribe-to-events pool relays event-filter sk-bytes command)
+                               :since (js/Math.floor (/ (js/Date.now) 1000))})
+        re-subscribe (fn [*state]
+                       (when-let [old-sub (:subscription *state)]
+                         (.close old-sub))
+                       (let [sub (subscribe-to-events (:pool *state) relays event-filter sk-bytes command)]
+                         (assoc *state :subscription sub)))
+        initial-state {:pool pool :reconnect nil}]
+    (auto-reconnect-looper (re-subscribe initial-state) re-subscribe)
     (js/console.error "Subscription started. Waiting for events...")))
 
 ; *** main *** ;
