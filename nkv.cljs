@@ -21,6 +21,8 @@
 (def nostr-kind 30078)
 (def default-relays ["wss://relay.damus.io" "wss://relay.nostr.band"])
 
+; *** nostr stuff *** ;
+
 (defn pubkey [sk-bytes]
   (nostr/getPublicKey sk-bytes))
 
@@ -80,6 +82,8 @@
           (js/process.exit 1))))
     (fn [err]
       (js/console.error err))))
+
+; *** file stuff *** ;
 
 (defn read-config [p]
   (when (fs/existsSync p)
@@ -189,6 +193,8 @@
                                :since (js/Math.floor (/ (js/Date.now) 1000))})]
     (subscribe-to-events pool relays event-filter sk-bytes command)
     (js/console.error "Subscription started. Waiting for events...")))
+
+; *** main *** ;
 
 (def cli-options
   [["-w" "--watch" "Watch for changes and run a command on new values."]
