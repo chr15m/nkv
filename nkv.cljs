@@ -28,6 +28,10 @@
    ["-i" "--init" "Create a new .nkv file with a new private key."]
    ["-h" "--help" "Show this help"]])
 
+(def last-event
+  (atom
+    (js/Math.floor (/ (js/Date.now) 1000))))
+
 ; *** helper functions *** ;
 
 (defn shell-escape [s]
@@ -110,8 +114,8 @@
 (defn health-check-looper [pool relays]
   (js/setTimeout
     (fn []
-      (js/console.error "Performing health check for all relays.")
-      (when-let [relays-map (.-relays pool)]
+      #_ (js/console.error "Performing health check for all relays.")
+      #_ (when-let [relays-map (.-relays pool)]
         (.forEach relays-map
                   (fn [relay url]
                     (js/console.log "relay" url (boolean (aget relay "connected")))
@@ -125,7 +129,7 @@
                                                     (= 1 (aget ws "readyState"))))
                                          count)
                                     0)]
-        (js/console.error "Open websockets count:" open-websockets-count)
+        #_ (js/console.error "Open websockets count:" open-websockets-count)
         (when (> open-websockets-count 0)
           (p/let [ping-filter (clj->js {:ids [(-> (crypto/randomBytes 32) (.toString "hex"))]
                                         :limit 1})
@@ -138,30 +142,36 @@
                               ping-filter
                               #js {:maxWait
                                    (+ websocket-ping-ms 1000)})])]
-            (js/console.error "Heartbeat check:" (pr-str result))
+            #_ (js/console.error "Heartbeat check:" (pr-str result))
             (if (= result :timeout)
               (do
                 (js/console.error "Closing pool.")
                 (when-let [relays-map (.-relays pool)]
                   (.forEach relays-map
                             (fn [relay url]
-                              (js/console.error "checking for relay websocket" url)
+                              #_ (js/console.error "checking for relay websocket" url)
                               (when-let [ws (aget relay "ws")]
-                                (js/console.error "closing websocket" url)
+                                (js/console.error "Closing websocket:" url)
                                 (.close ws)))))
                 #_ (.destroy pool))
               (health-check-looper pool relays))))))
     websocket-ping-ms))
 
 (defn subscribe-to-events [pool relays event-filter sk-bytes command]
-  (let [sub (.subscribe pool (clj->js relays) event-filter
+  (let [sub (.subscribe pool (clj->js relays)
+                        (doto event-filter
+                          (aset "since" @last-event))
                         (clj->js {:onevent
-                                  #(received-event sk-bytes command %)
+                                  (fn [event]
+                                    (js/console.log @last-event (aget event "created_at"))
+                                    (reset! last-event
+                                            (inc (aget event "created_at")))
+                                    (received-event sk-bytes command event))
                                   :onclose
                                   #(js/console.error "Subscription closed")
                                   :oneose
                                   #(do
-                                     (js/console.error "Subscription eose")    
+                                     (js/console.error "Subscription eose")
                                      (health-check-looper pool relays))}))]
     sub))
 
@@ -180,9 +190,10 @@
                              (vals)
                              (filter true?)
                              count)]
-    (js/console.log "auto-reconnect-looper" connected-count)
-    (js/console.log "relays connection status" (js/Object.fromEntries (.listConnectionStatus pool)))
-    (when-let [relays-map (.-relays pool)]
+    #_ (js/console.log "auto-reconnect-looper" connected-count)
+    #_ (js/console.log "relays connection status"
+                       (js/Object.fromEntries (.listConnectionStatus pool)))
+    #_ (when-let [relays-map (.-relays pool)]
       (.forEach relays-map
                 (fn [relay url]
                   (js/console.log "relay" url (boolean (aget relay "connected"))))))
@@ -201,7 +212,7 @@
               (let [delay-s (nth resubscribe-backoff backoff-idx)]
                 (if (> (js/Date.now) (+ last-attempt-ms (* delay-s 1000)))
                   (do
-                    (js/console.error "Attempting to reconnect to relays...")
+                    (js/console.error "Attempting relay reconnection.")
                     (let [next-idx (min (inc backoff-idx) (dec (count resubscribe-backoff)))]
                         (-> *state
                             (refresh-pool)
@@ -211,7 +222,7 @@
               (do
                 (js/console.error "Connection to relays lost.")
                 (assoc *state :reconnect [0 (js/Date.now)]))))]
-      (print "auto-reconnect-looper reconnect *state"
+      #_ (print "auto-reconnect-looper reconnect *state"
              (:reconnect *updated-state))
       (js/setTimeout
         #(auto-reconnect-looper *updated-state re-subscribe-callback)
@@ -228,7 +239,7 @@
                                :kinds [nostr-kind]
                                :#d [d-tag-value]
                                :#n [n-tag-value]
-                               :since (js/Math.floor (/ (js/Date.now) 1000))})
+                               :since @last-event})
         re-subscribe (fn [*state]
                        (when-let [old-sub (:subscription *state)]
                          (.close old-sub))
@@ -392,7 +403,7 @@
 
 (defn get-args [argv]
   (not-empty (js->clj (.slice argv
-                              (if 
+                              (if
                                 (or
                                   (.endsWith
                                     (or (aget argv 1) "")
