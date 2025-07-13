@@ -13,7 +13,8 @@
     "cljs-shrinkwrap": "^0.0.7"
   },
   "scripts": {
-    "build": "shrinkwrap nkv.cljs nkv"
+    "build": "shrinkwrap nkv.cljs nkv",
+    "test": "cd .github; ./test.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
