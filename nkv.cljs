@@ -23,6 +23,11 @@
 (def resubscribe-backoff [10 10 10 20 20 30 60])
 (def websocket-ping-ms 10000)
 
+; *** helper functions *** ;
+
+(defn shell-escape [s]
+  (str "'" (str/replace s "'" "'\\''") "'"))
+
 ; *** nostr stuff *** ;
 
 (defn pubkey [sk-bytes]
@@ -85,6 +90,50 @@
     (fn [err]
       (js/console.error err))))
 
+(defn received-event [sk-bytes command event]
+  (let [decrypted (decrypt-content sk-bytes (aget event "content"))
+        value (:value decrypted)]
+    (when value
+      (js/console.error "New value received:" value)
+      (let [cmd-str (str (str/join " " command) " " (shell-escape value))]
+        (js/console.error "Executing:" cmd-str)
+        (cp/exec cmd-str (fn [err stdout stderr]
+                           (when err (js/console.error "Exec error:" err))
+                           (when (not-empty stdout) (js/console.log stdout))
+                           (when (not-empty stderr) (js/console.error stderr))))))))
+
+(defn subscribe-to-events [pool relays event-filter sk-bytes command]
+  (let [sub (.subscribe pool (clj->js relays) event-filter
+                        (clj->js {:onevent
+                                  #(received-event sk-bytes command %)
+                                  :onclose
+                                  #(js/console.error "Subscription closed")}))]
+    ((fn health-check-looper []
+       (js/setTimeout
+         (fn []
+           (js/console.error "Performing health check for all relays.")
+           (p/let [ping-filter (clj->js {:ids [(-> (crypto/randomBytes 32) (.toString "hex"))]
+                                         :limit 1})
+                   result (p/any
+                            [(p/delay
+                               (- websocket-ping-ms 1000)
+                               :timeout)
+                             (.querySync
+                               pool (clj->js relays)
+                               ping-filter
+                               #js {:maxWait
+                                    (+ websocket-ping-ms 1000)})])]
+             (js/console.error "Heartbeat check:" (pr-str result))
+             (if (= result :timeout)
+               (do
+                 (js/console.error "Closing pool.")
+                 (aset sub "closed" true)
+                 (.destroy pool))
+               (when (not (aget sub "closed"))
+                 (health-check-looper)))))
+         websocket-ping-ms)))
+    sub))
+
 (defn auto-reconnect-looper [*state re-subscribe-callback]
   (let [pool (:pool *state)
         statuses (.listConnectionStatus pool)
@@ -103,7 +152,8 @@
     (let [*updated-state
           (if
             (> connected-count 0)
-            (assoc *state :reconnect nil
+            (assoc *state
+                   :reconnect nil
                    :connected-count connected-count)
             (if-let [[backoff-idx last-attempt-ms] (:reconnect *state)]
               (let [delay-s (nth resubscribe-backoff backoff-idx)]
@@ -123,6 +173,25 @@
         (*
          (js/Math.max (-> *updated-state :reconnect first) 1)
          1000)))))
+
+(defn watch-key [sk-bytes pk-hex key-arg command relays]
+  (js/console.error (str "Watching key: " key-arg ", and running command: " (str/join " " command)))
+  (let [pool (SimplePool.)
+        d-tag-value (hmac-sha256 sk-bytes (str app-name ":" key-arg))
+        n-tag-value (hmac-sha256 sk-bytes app-name)
+        event-filter (clj->js {:authors [pk-hex]
+                               :kinds [nostr-kind]
+                               :#d [d-tag-value]
+                               :#n [n-tag-value]
+                               :since (js/Math.floor (/ (js/Date.now) 1000))})
+        re-subscribe (fn [*state]
+                       (when-let [old-sub (:subscription *state)]
+                         (.close old-sub))
+                       (let [sub (subscribe-to-events (:pool *state) relays event-filter sk-bytes command)]
+                         (assoc *state :subscription sub)))
+        initial-state {:pool pool :reconnect nil}]
+    (auto-reconnect-looper (re-subscribe initial-state) re-subscribe)
+    (js/console.error "Subscription started. Waiting for events...")))
 
 ; *** file stuff *** ;
 
@@ -201,62 +270,6 @@
           (js/console.error "Latest event content decrypted:" (clj->js decrypted))
           (when decrypted (:value decrypted)))))
     (fn [err] (js/console.error err))))
-
-(defn shell-escape [s]
-  (str "'" (str/replace s "'" "'\\''") "'"))
-
-(defn received-event [sk-bytes command event]
-  (let [decrypted (decrypt-content sk-bytes (aget event "content"))
-        value (:value decrypted)]
-    (when value
-      (js/console.error "New value received:" value)
-      (let [cmd-str (str (str/join " " command) " " (shell-escape value))]
-        (js/console.error "Executing:" cmd-str)
-        (cp/exec cmd-str (fn [err stdout stderr]
-                           (when err (js/console.error "Exec error:" err))
-                           (when (not-empty stdout) (js/console.log stdout))
-                           (when (not-empty stderr) (js/console.error stderr))))))))
-
-(defn subscribe-to-events [pool relays event-filter sk-bytes command]
-  (let [sub (.subscribe pool (clj->js relays) event-filter
-                        (clj->js {:onevent
-                                  #(received-event sk-bytes command %)
-                                  :onclose
-                                  #(js/console.error "CLOSE" %)}))]
-    (doseq [[url relay] (.entries (aget pool "relays"))]
-      (when-let [ws (aget relay "ws")]
-        (when (aget ws "ping")
-          (js/console.error "Setting up ping loop for relay" url)
-          (.on ws "pong" #(js/console.error "Received pong from" url %))
-          ((fn ping-looper []
-             (js/setTimeout
-               (fn []
-                 (js/console.log "readyState" url (aget ws "readyState"))
-                 (when (= (aget ws "readyState") 1) ; WebSocket.OPEN
-                   (js/console.log "Pinging" url)
-                   (.ping ws)
-                   (ping-looper)))
-               websocket-ping-ms))))))
-    sub))
-
-(defn watch-key [sk-bytes pk-hex key-arg command relays]
-  (js/console.error (str "Watching key: " key-arg ", and running command: " (str/join " " command)))
-  (let [pool (SimplePool.)
-        d-tag-value (hmac-sha256 sk-bytes (str app-name ":" key-arg))
-        n-tag-value (hmac-sha256 sk-bytes app-name)
-        event-filter (clj->js {:authors [pk-hex]
-                               :kinds [nostr-kind]
-                               :#d [d-tag-value]
-                               :#n [n-tag-value]
-                               :since (js/Math.floor (/ (js/Date.now) 1000))})
-        re-subscribe (fn [*state]
-                       (when-let [old-sub (:subscription *state)]
-                         (.close old-sub))
-                       (let [sub (subscribe-to-events (:pool *state) relays event-filter sk-bytes command)]
-                         (assoc *state :subscription sub)))
-        initial-state {:pool pool :reconnect nil}]
-    (auto-reconnect-looper (re-subscribe initial-state) re-subscribe)
-    (js/console.error "Subscription started. Waiting for events...")))
 
 ; *** main *** ;
 
