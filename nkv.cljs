@@ -163,7 +163,7 @@
                           (aset "since" @last-event))
                         (clj->js {:onevent
                                   (fn [event]
-                                    (js/console.log @last-event (aget event "created_at"))
+                                    #_ (js/console.log @last-event (aget event "created_at"))
                                     (reset! last-event
                                             (inc (aget event "created_at")))
                                     (received-event sk-bytes command event))
