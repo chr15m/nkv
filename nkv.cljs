@@ -23,6 +23,11 @@
 (def resubscribe-backoff [10 10 10 20 20 30 60])
 (def websocket-ping-ms 10000)
 
+(def cli-options
+  [["-w" "--watch" "Watch for changes and run a command on new values."]
+   ["-i" "--init" "Create a new .nkv file with a new private key."]
+   ["-h" "--help" "Show this help"]])
+
 ; *** helper functions *** ;
 
 (defn shell-escape [s]
@@ -271,12 +276,16 @@
           (when decrypted (:value decrypted)))))
     (fn [err] (js/console.error err))))
 
-; *** main *** ;
+(defn handle-init []
+  (if (fs/existsSync config-file-path)
+    (do
+      (js/console.error "Config already present in" config-file-path)
+      (js/process.exit 1))
+    (do
+      (generate-new-nkv-config (first (get-relays nil)))
+      (js/process.exit 0))))
 
-(def cli-options
-  [["-w" "--watch" "Watch for changes and run a command on new values."]
-   ["-i" "--init" "Create a new .nkv file with a new private key."]
-   ["-h" "--help" "Show this help"]])
+; *** main *** ;
 
 (defn print-usage [summary]
   (println "Usage:")
@@ -287,15 +296,6 @@
   (println)
   (println "Options:")
   (println summary))
-
-(defn handle-init []
-  (if (fs/existsSync config-file-path)
-    (do
-      (js/console.error "Config already present in" config-file-path)
-      (js/process.exit 1))
-    (do
-      (generate-new-nkv-config (first (get-relays nil)))
-      (js/process.exit 0))))
 
 (defn main [& args]
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)
