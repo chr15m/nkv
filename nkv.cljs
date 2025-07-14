@@ -106,10 +106,12 @@
       (js/console.error "New value received:" value)
       (let [cmd-str (str (str/join " " command) " " (shell-escape value))]
         (js/console.error "Executing:" cmd-str)
-        (cp/exec cmd-str (fn [err stdout stderr]
-                           (when err (js/console.error "Exec error:" err))
-                           (when (not-empty stdout) (js/console.log stdout))
-                           (when (not-empty stderr) (js/console.error stderr))))))))
+        (let [child (cp/spawn cmd-str #js {:shell true :stdio "inherit"})]
+          (.on child "error" (fn [err]
+                               (js/console.error (str "Error executing command: " err))))
+          (.on child "exit" (fn [code]
+                              (when (not= code 0)
+                                (js/console.error (str "Command exited with non-zero status: " code))))))))))
 
 (defn health-check-looper [pool relays]
   (js/setTimeout
