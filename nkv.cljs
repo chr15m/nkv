@@ -11,8 +11,10 @@
     ["os" :as os]
     ["path" :as path]
     ["nostr-tools" :as nostr]
+    ["nostr-tools/nip49" :as nip49]
     ["ws$default" :as ws]
-    ["child_process" :as cp]))
+    ["child_process" :as cp]
+    ["qrcode-terminal$default" :as qrcode]))
 
 (useWebSocketImplementation ws)
 
@@ -30,6 +32,7 @@
   [["-w" "--watch" "Watch for changes and run a command on new values."]
    ["-i" "--init" "Create a new .nkv file with a new private key."]
    ["-s" "--silent" "Silence all output except for read values."]
+   ["-q" "--qr" "Print a QR code of the encrypted nsec for syncing."]
    ["-h" "--help" "Show this help"]])
 
 (def last-event
@@ -58,6 +61,13 @@
       (js->clj (js/JSON.parse decrypted) :keywordize-keys true))
     (catch :default e
       (js/console.error "Failed to decrypt content:" e)
+      nil)))
+
+(defn encrypt-key-with-pw [sk-bytes pw]
+  (try
+    (nip49/encrypt sk-bytes pw)
+    (catch :default e
+      (js/console.error "Failed to encrypt key" e)
       nil)))
 
 (defn decode-nsec [nsec-str]
@@ -345,6 +355,24 @@
       (generate-new-nkv-config (first (get-relays nil)))
       (js/process.exit 0))))
 
+(defn handle-qr [sk-bytes]
+  (let [pin (-> (crypto/randomBytes 4)
+                (.readUInt32BE 0)
+                (mod 100000000)
+                str
+                (.padStart 8 "0"))
+        encrypted-key (encrypt-key-with-pw sk-bytes pin)]
+    (if encrypted-key
+      (do
+        ((.-info log) "Scan this QR code on your other device.")
+        (.generate qrcode encrypted-key #js {:small true})
+        (println (str "\nPin: " pin))
+        (println encrypted-key)
+        (js/process.exit 0))
+      (do
+        (js/console.error "Failed to encrypt key.")
+        (js/process.exit 1)))))
+
 ; *** main *** ;
 
 (defn print-usage [summary]
@@ -353,6 +381,7 @@
   (println "  nkv <key>          Read a value for the given key.")
   (println "  nkv <key> <value>  Write a value for the given key.")
   (println "  nkv <key> --watch <command>  Watch for changes and run command.")
+  (println "  nkv --qr             Print a QR code of the encrypted nsec for syncing.")
   (println)
   (println "Options:")
   (println summary))
@@ -375,6 +404,10 @@
 
       (:init options)
       (handle-init)
+
+      (:qr options)
+      (let [{:keys [sk-bytes]} (load-config)]
+        (handle-qr sk-bytes))
 
       :else
       (let [{:keys [sk-bytes relays]} (load-config)
