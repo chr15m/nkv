@@ -19,7 +19,10 @@
 (def app-name "cx.mccormick.nkv")
 (def config-file-path ".nkv")
 (def nostr-kind 30078)
-(def default-relays ["wss://relay.damus.io" "wss://relay.nostr.band"])
+(def default-relays
+  ["wss://relay.mccormick.cx"
+   "wss://relay.damus.io"
+   "wss://relay.nostr.band"])
 (def resubscribe-backoff [10 10 10 20 20 30 60])
 (def websocket-ping-ms 10000)
 
