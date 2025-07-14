@@ -29,6 +29,7 @@
 (def cli-options
   [["-w" "--watch" "Watch for changes and run a command on new values."]
    ["-i" "--init" "Create a new .nkv file with a new private key."]
+   ["-s" "--silent" "Silence all output except for read values."]
    ["-h" "--help" "Show this help"]])
 
 (def last-event
@@ -36,6 +37,9 @@
     (js/Math.floor (/ (js/Date.now) 1000))))
 
 ; *** helper functions *** ;
+
+(def log
+  #js {:info js/console.error})
 
 (defn shell-escape [s]
   (str "'" (str/replace s "'" "'\\''") "'"))
@@ -72,7 +76,7 @@
       (.digest "hex")))
 
 (defn create-finalized-event [sk-bytes clj-content d-identifier]
-  (js/console.error "Creating event for d-identifier:" d-identifier "with content:" (pr-str clj-content))
+  ((.-info log) "Creating event for d-identifier:" d-identifier "with content:" (pr-str clj-content))
   (let [encrypted-content (encrypt-content sk-bytes clj-content)
         d-tag-value (hmac-sha256 sk-bytes (str app-name ":" d-identifier))
         n-tag-value (hmac-sha256 sk-bytes app-name)
@@ -83,19 +87,19 @@
            :tags [["d" d-tag-value]
                   ["n" n-tag-value]]
            :content encrypted-content})]
-    (js/console.error "event" event-template)
+    ((.-info log) "event" event-template)
     (nostr/finalizeEvent event-template sk-bytes)))
 
 (defn publish-event [event relays]
-  (js/console.error "Publishing event to relays:" (clj->js relays))
+  ((.-info log) "Publishing event to relays:" (clj->js relays))
   (p/catch
     (p/let [pool (SimplePool.)
             published (js/Promise.allSettled (.publish pool (clj->js relays) event))
             success? (seq (filter #(= (aget % "status") "fulfilled")
                                   published))]
-      (js/console.error "published" published)
+      ((.-info log) "published" published)
       (if success?
-        (js/console.error "Event published to at least one relay.")
+        ((.-info log) "Event published to at least one relay.")
         (do
           (js/console.error "No relay accepted the event.")
           (js/process.exit 1))))
@@ -106,9 +110,9 @@
   (let [decrypted (decrypt-content sk-bytes (aget event "content"))
         value (:value decrypted)]
     (when value
-      (js/console.error "New value received:" value)
+      ((.-info log) "New value received:" value)
       (let [cmd-str (str (str/join " " command) " " (shell-escape value))]
-        (js/console.error "Executing:" cmd-str)
+        ((.-info log) "Executing:" cmd-str)
         (let [child (cp/spawn cmd-str #js {:shell true :stdio "inherit"})]
           (.on child "error" (fn [err]
                                (js/console.error (str "Error executing command: " err))))
@@ -150,13 +154,13 @@
             #_ (js/console.error "Heartbeat check:" (pr-str result))
             (if (= result :timeout)
               (do
-                (js/console.error "Closing pool.")
+                ((.-info log) "Closing pool.")
                 (when-let [relays-map (.-relays pool)]
                   (.forEach relays-map
                             (fn [relay url]
                               #_ (js/console.error "checking for relay websocket" url)
                               (when-let [ws (aget relay "ws")]
-                                (js/console.error "Closing websocket:" url)
+                                ((.-info log) "Closing websocket:" url)
                                 (.close ws)))))
                 #_ (.destroy pool))
               (health-check-looper pool relays))))))
@@ -173,10 +177,10 @@
                                             (inc (aget event "created_at")))
                                     (received-event sk-bytes command event))
                                   :onclose
-                                  #(js/console.error "Subscription closed")
+                                  #((.-info log) "Subscription closed")
                                   :oneose
                                   #(do
-                                     (js/console.error "Subscription eose")
+                                     ((.-info log) "Subscription eose")
                                      (health-check-looper pool relays))}))]
     sub))
 
@@ -206,7 +210,7 @@
       (and
         (> connected-count 0)
         (not (> (:connected-count *state) 0)))
-      (js/console.error "Connected."))
+      ((.-info log) "Connected."))
     (let [*updated-state
           (if
             (> connected-count 0)
@@ -217,7 +221,7 @@
               (let [delay-s (nth resubscribe-backoff backoff-idx)]
                 (if (> (js/Date.now) (+ last-attempt-ms (* delay-s 1000)))
                   (do
-                    (js/console.error "Attempting relay reconnection.")
+                    ((.-info log) "Attempting relay reconnection.")
                     (let [next-idx (min (inc backoff-idx) (dec (count resubscribe-backoff)))]
                         (-> *state
                             (refresh-pool)
@@ -225,7 +229,7 @@
                             (assoc :reconnect [next-idx (js/Date.now)]))))
                   *state))
               (do
-                (js/console.error "Connection to relays lost.")
+                ((.-info log) "Connection to relays lost.")
                 (assoc *state :reconnect [0 (js/Date.now)]))))]
       #_ (print "auto-reconnect-looper reconnect *state"
              (:reconnect *updated-state))
@@ -236,7 +240,7 @@
          1000)))))
 
 (defn watch-key [sk-bytes pk-hex key-arg command relays]
-  (js/console.error (str "Watching key: " key-arg ", and running command: " (str/join " " command)))
+  ((.-info log) (str "Watching key: " key-arg ", and running command: " (str/join " " command)))
   (let [pool (SimplePool.)
         d-tag-value (hmac-sha256 sk-bytes (str app-name ":" key-arg))
         n-tag-value (hmac-sha256 sk-bytes app-name)
@@ -252,7 +256,7 @@
                          (assoc *state :subscription sub)))
         initial-state {:pool pool :reconnect nil}]
     (auto-reconnect-looper (re-subscribe initial-state) re-subscribe)
-    (js/console.error "Subscription started. Waiting for events...")))
+    ((.-info log) "Subscription started. Waiting for events...")))
 
 ; *** file stuff *** ;
 
@@ -269,7 +273,7 @@
     (fs/writeFileSync config-file-path
                       (js/JSON.stringify
                         (clj->js new-config) nil 2) "utf-8")
-    (js/console.error "Wrote config to" config-file-path)
+    ((.-info log) "Wrote config to" config-file-path)
     [new-sk-bytes "generated config"]))
 
 (defn get-relays [config-from-file]
@@ -300,20 +304,20 @@
             sk-from-file [sk-from-file (str "config file")]
             :else
             (generate-new-nkv-config relays)))]
-    (js/console.error "Using nsec from" nsec-source "and relays from" relays-source)
+    ((.-info log) "Using nsec from" nsec-source "and relays from" relays-source)
     (when loaded-path
-      (js/console.error "Loaded config from" loaded-path))
+      ((.-info log) "Loaded config from" loaded-path))
     {:sk-bytes sk-bytes :relays relays}))
 
 (defn write-value [sk-bytes key-arg value-arg relays]
-  (js/console.error (str "Attempting to write key: " key-arg ", value: " value-arg))
+  ((.-info log) (str "Attempting to write key: " key-arg ", value: " value-arg))
   (let [content {:value value-arg}
         event (create-finalized-event sk-bytes content key-arg)]
     (publish-event event relays)))
 
 (defn read-value [sk-bytes pk-hex key-arg relays]
-  (js/console.error (str "Attempting to read key: " key-arg))
-  (js/console.error "pk-key" pk-hex)
+  ((.-info log) (str "Attempting to read key: " key-arg))
+  ((.-info log) "pk-key" pk-hex)
   (p/catch
     (p/let [pool (SimplePool.)
             d-tag-value (hmac-sha256 sk-bytes (str app-name ":" key-arg))
@@ -328,7 +332,7 @@
         (let [sorted-events (sort-by #(aget % "created_at") > events)
               latest-event (first sorted-events)
               decrypted (decrypt-content sk-bytes (aget latest-event "content"))]
-          (js/console.error "Latest event content decrypted:" (clj->js decrypted))
+          ((.-info log) "Latest event content decrypted:" (clj->js decrypted))
           (when decrypted (:value decrypted)))))
     (fn [err] (js/console.error err))))
 
@@ -356,6 +360,8 @@
 (defn main [& args]
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)
         arg-count (count arguments)]
+    (when (:silent options)
+      (set! (.-info log) identity))
     #_ (js/console.error "Arguments parsed:" (pr-str arguments))
     (cond
       errors
@@ -394,7 +400,7 @@
               ; Write operation
               (p/do!
                 (write-value sk-bytes key-arg value-arg relays)
-                (js/console.error (str "Value set for key '" key-arg "'."))
+                ((.-info log) (str "Value set for key '" key-arg "'."))
                 (js/process.exit 0))
               ; Read operation
               (p/let [retrieved-value (read-value sk-bytes pk-hex key-arg relays)]
