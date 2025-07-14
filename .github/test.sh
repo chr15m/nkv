@@ -95,6 +95,24 @@ if ! echo "$output" | grep -q "No value found for key"; then
 fi
 printf "%b\n" "${PASS} Reading non-existent key failed as expected.${NC}"
 
+echo "--- Test: --qr flag ---"
+output=$(${binary} --qr 2>&1)
+exit_code=$?
+echo "$output"
+if [ $exit_code -ne 0 ]; then
+  printf "%b\n" "${FAIL} --qr exited with code $exit_code, expected 0.${NC}"
+  exit 1
+fi
+if ! echo "$output" | grep -q "Pin:"; then
+  printf "%b\n" "${FAIL} --qr output did not contain 'Pin:'.${NC}"
+  exit 1
+fi
+if ! echo "$output" | grep -q "ncryptsec"; then
+  printf "%b\n" "${FAIL} --qr output did not contain 'ncryptsec'.${NC}"
+  exit 1
+fi
+printf "%b\n" "${PASS} --qr flag works as expected.${NC}"
+
 echo "--- Test: --watch functionality ---"
 WATCH_FILE="watch_output.log"
 # Clear watch file if it exists
